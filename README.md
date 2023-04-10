@@ -55,7 +55,7 @@ To add the `srnjak` apt source to your system, follow these steps:
 
 ### Install `ldap-backup`
 
-To install the `db-backup` package, follow these steps:
+To install the `ldap-backup` package, follow these steps:
 
 1. Update the package index again:
     ```
