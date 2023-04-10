@@ -1,0 +1,8 @@
+bash/ldap-backup:usr/bin
+
+# Configuration examples
+doc/examples/*:usr/share/doc/ldap-backup/examples
+
+# Debian specific
+debian/preinst:DEBIAN
+debian/postrm:DEBIAN
