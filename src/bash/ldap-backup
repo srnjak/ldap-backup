@@ -1,0 +1,232 @@
+#!/bin/bash
+
+# Initialize variables with default values
+CONFIG_DIRECTORY=/etc/ldap-backup
+HELP_FLAG=0
+
+# Define function to print out help message
+print_help() {
+    cat <<EOF
+Usage: $0 [options] <config_name>
+
+Creates a backup of all OpenLDAP databases specified in the configuration file.
+
+Positional arguments:
+  config_name          Name of the configuration to use. If not specified, all files in the configurations directory with the .cfg extension will be used.
+
+Options:
+  -c, --config-dir         The path to directory containing configurations. (default: $CONFIG_DIRECTORY)
+  -r, --retention POLICY   Retention policy type. Possible values: daily, weekly, monthly, yearly. If set, the value will be used as a suffix in the subdirectory name.
+  -m, --send-mail          Send an email notification after the backup is complete.
+                           If this flag is set, make sure to set the email address in the configuration file.
+  -h, --help               Print this help message and exit.
+
+The configuration files are shell scripts that define the following variables:
+  - LDAP_SUFFIX_LIST     The list of LDAP suffixes to be included into a backup
+  - BACKUP_DIR           The directory where the backups will be stored
+  - EMAILFROM            The email from which e-mail will be send.
+  - EMAILTO              The email to which e-mail will be send.
+
+Examples:
+  $0                  # Creates a backup using all the configuration files.
+  $0 myldap             # Creates a backup using the specified configuration file "myldap.cfg".
+  $0 -r daily         # Creates a backup using all the configuration files and use a "daily" retention policy.
+  $0 -r weekly -m myldap   # Creates a backup using the specified configuration file "myldap.cfg" and use a "weekly" retention policy, and send an email notification after the backup is complete.
+  $0 -h               # Prints this help message.
+EOF
+}
+
+LOG_FILE="/tmp/ldap-backup-$RANDOM.log"
+echo "Writing into the log file: $LOG_FILE"
+
+LOG_FILE="/tmp/ldap-backup-$RANDOM.log"
+echo "Writing into the log file: $LOG_FILE"
+
+# Define a function to be called at the end of the script
+function cleanup {
+  echo "Cleaning up..."
+  rm -f $LOG_FILE
+}
+
+# Register the cleanup function to be called on script exit
+trap cleanup EXIT
+
+function write {
+  echo -e "$1"
+
+  no_color=$(echo -e "$1" | awk '{gsub(/\033\[[0-9;]*m/,"")}1')
+  if [[ $1 == *"\c" ]]; then
+    echo -ne "$no_color" >> $LOG_FILE
+  else
+    echo -e "$no_color" >> $LOG_FILE
+  fi
+}
+
+function log {
+  cas=$(date +"%H:%M:%S")
+  write "[$cas] $1"
+}
+
+format_suffix() {
+    local var="$1"
+    local delimiter="$2"
+    local result
+    result=$(echo "$var" | grep -o '[^=,]*' | tr '\n' "$delimiter")
+    echo "${result%$delimiter}"
+}
+
+# Loop through options and assign values
+while [[ "$#" -gt 0 ]]; do
+  case $1 in
+    -c|--config-dir)
+        CONFIG_DIRECTORY="$2"
+        shift
+        ;;
+    -r|--retention)
+        RETENTION_POLICY="$2"
+        shift
+        ;;
+    -m|--send-mail)
+        SEND_MAIL=true
+        shift
+        ;;
+    -h|--help)
+        HELP_FLAG=1
+        ;;
+    -*)
+        # If unknown option or argument is given, print help message and exit
+        print_help
+        exit 1
+        ;;
+  esac
+  shift
+done
+
+# If help flag is set, print help message and exit
+if [ $HELP_FLAG -eq 1 ]; then
+    print_help
+    exit 0
+fi
+
+# Get the config file(s) to use
+if [ $# -eq 0 ]; then
+    CONFIG_FILES="$CONFIG_DIRECTORY/*.cfg"
+else
+    CONFIG_FILES="$CONFIG_DIRECTORY/$1.cfg"
+fi
+
+# Validate retention policy option
+if [[ -v RETENTION_POLICY ]] && \
+   ! [[ $RETENTION_POLICY =~ ^(daily|weekly|monthly|yearly)$ ]]; then
+    echo "Error: Invalid retention policy option. Valid options are 'daily', 'weekly', 'monthly', or 'yearly'." >&2
+    exit 1
+fi
+
+# Loop through each config file
+# shellcheck disable=SC2068
+for CONFIG_FILE in ${CONFIG_FILES[@]}; do
+
+    BACKUP_NAME=$(basename "$CONFIG_FILE" | cut -d'.' -f1)
+
+    # Check if the config file exists
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "Error: Config file $CONFIG_FILE not found." >&2
+        exit 1
+    fi
+
+    echo -e "\nProcessing config file: $CONFIG_FILE"
+
+    # Read config file
+    # shellcheck disable=SC1090
+    source "$CONFIG_FILE"
+
+    # Check if the backup destination directory exists
+    if [ ! -d "$BACKUP_DIR" ]; then
+        echo "Error: Backup destination directory $BACKUP_DIR not found." >&2
+        exit 1
+    fi
+
+    touch $LOG_FILE
+
+    DATE_TIME=$(date +"%Y-%m-%d_%H%M%S")
+    if [ -n "$RETENTION_POLICY" ]; then
+        BACKUP_SUBDIR="${BACKUP_NAME}_${DATE_TIME}_${RETENTION_POLICY}"
+    else
+        BACKUP_SUBDIR="${BACKUP_NAME}_${DATE_TIME}"
+    fi
+    BACKUP_SUBDIR_FULL="$BACKUP_DIR/$BACKUP_SUBDIR"
+
+    clear
+
+    write "***************************************"
+    write "LDAP BACKUP CREATION"
+    write "***************************************"
+    write "Date         : $(date +'%F %X')"
+    write "Backup name  : $BACKUP_NAME"
+    write "Backup dir   : $BACKUP_SUBDIR_FULL"
+    write " "
+    write "E-mail (from): $EMAILFROM"
+    write "E-mail (to)  : $EMAILTO"
+    write "***************************************"
+    write ""
+
+    # Create backup subdirectory
+    mkdir -p "$BACKUP_SUBDIR_FULL"
+
+    # Initialize the array to store failed backups' information
+    FAILED_BACKUPS=()
+
+    # Backup each database
+    for LDAP_SUFFIX in "${LDAP_SUFFIX_LIST[@]}"; do
+        FORMATTED_SUFFIX=$(format_suffix "$LDAP_SUFFIX" "_")
+
+        # Create backup file name
+        FILENAME="$BACKUP_NAME.$FORMATTED_SUFFIX.$DATE_TIME.ldif.gz"
+        BACKUP_FILE="$BACKUP_SUBDIR_FULL/$FILENAME"
+
+        # Print backup start message
+        log "Ldap prefix: $LDAP_SUFFIX ... \c"
+
+        slapcat -b "$LDAP_SUFFIX" | gzip -9 > "$BACKUP_FILE"
+
+        # Print backup end message
+        if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
+            write "\033[32mdone\033[0m"
+        else
+            # Add failed backup's information to the array
+            FAILED_BACKUPS+=("$BACKUP_NAME.$LDAP_SUFFIX")
+
+            write "\033[31mfailed\033[0m"
+        fi
+    done
+
+    # Print completion message
+    write "\nBackups of $BACKUP_NAME completed to: $BACKUP_SUBDIR_FULL"
+
+    # size data
+    write "Backup size: \c"
+    SIZE=$(du -hs "$BACKUP_SUBDIR_FULL" | awk '{print $1}')
+    write "$SIZE"
+
+    cp "$LOG_FILE" "$BACKUP_SUBDIR_FULL/ldap-backup.log"
+
+done
+
+# Print out the number of failed backups and their information (if any)
+if [ ${#FAILED_BACKUPS[@]} -eq 0 ]; then
+    write "\nAll ldap backups completed successfully."
+else
+    write "\n${#FAILED_BACKUPS[@]} backups failed:"
+    OUTCOME="FAILED"
+    for failed_backup in "${FAILED_BACKUPS[@]}"; do
+        write "$failed_backup"
+    done
+fi
+
+# sending mail
+SUMMARY="[ldap-backup] $BACKUP_NAME ($SIZE) $OUTCOME"
+if [[ "$SEND_MAIL" == true ]]; then
+  # sending mail
+  cat $LOG_FILE | mail -s "$SUMMARY" -a "From: $EMAILFROM" $EMAILTO
+
+fi
