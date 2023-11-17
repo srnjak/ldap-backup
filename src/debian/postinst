@@ -1,0 +1,48 @@
+#!/bin/bash
+
+set -e
+
+LDAP_BACKUP_SCRIPT="ldap-backup"
+SCHEDULER_SCRIPT="backup-scheduler"
+CONFIG="/etc/ldap-backup/_schedule.cfg"
+
+case "$1" in
+    configure)
+        # Add the cronjobs to the current user's crontab if not already present
+        if ! crontab -l | grep -q "# Daily Backup - $SCHEDULER_SCRIPT"; then
+            (crontab -l 2>/dev/null || true; echo "30 2 * * * $SCHEDULER_SCRIPT -e $LDAP_BACKUP_SCRIPT -r daily -c $CONFIG # LDAP backup - Daily - DO NOT CHANGE!") | crontab -
+        else
+            echo "Daily cronjob already exists. Skipping addition."
+        fi
+
+        if ! crontab -l | grep -q "# Weekly Backup - $SCHEDULER_SCRIPT"; then
+            (crontab -l 2>/dev/null || true; echo "30 3 * * 0 $SCHEDULER_SCRIPT -e $LDAP_BACKUP_SCRIPT -r weekly -c $CONFIG # LDAP backup - Weekly - DO NOT CHANGE!") | crontab -
+        else
+            echo "Weekly cronjob already exists. Skipping addition."
+        fi
+
+        if ! crontab -l | grep -q "# Monthly Backup - $SCHEDULER_SCRIPT"; then
+            (crontab -l 2>/dev/null || true; echo "30 4 1 * * $SCHEDULER_SCRIPT -e $LDAP_BACKUP_SCRIPT -r monthly -c $CONFIG # LDAP backup - Monthly - DO NOT CHANGE!") | crontab -
+        else
+            echo "Monthly cronjob already exists. Skipping addition."
+        fi
+
+        if ! crontab -l | grep -q "# Yearly Backup - $SCHEDULER_SCRIPT"; then
+            (crontab -l 2>/dev/null || true; echo "30 5 1 1 * $SCHEDULER_SCRIPT -e $LDAP_BACKUP_SCRIPT -r yearly -c $CONFIG # LDAP backup - Yearly - DO NOT CHANGE!") | crontab -
+        else
+            echo "Yearly cronjob already exists. Skipping addition."
+        fi
+
+        # Enable the cron service
+        update-rc.d cron enable || true
+
+        # Restart the cron service (optional)
+        service cron restart || true
+        ;;
+    *)
+        # Do nothing on other actions
+        exit 0
+        ;;
+esac
+
+exit 0
