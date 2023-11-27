@@ -98,6 +98,12 @@ while [[ "$#" -gt 0 ]]; do
         print_help
         exit 1
         ;;
+    *)
+        # If only one argument remains, it must be the backup name.
+        if [ "$#" -eq 1 ]; then
+            break
+        fi
+        ;;
   esac
   shift
 done
@@ -125,6 +131,11 @@ fi
 # Loop through each config file
 # shellcheck disable=SC2068
 for CONFIG_FILE in ${CONFIG_FILES[@]}; do
+
+    CURRENT_FILENAME=$(basename "$CONFIG_FILE")
+    if [ "$CURRENT_FILENAME" == "_schedule.cfg" ]; then
+          continue
+    fi
 
     BACKUP_NAME=$(basename "$CONFIG_FILE" | cut -d'.' -f1)
 
