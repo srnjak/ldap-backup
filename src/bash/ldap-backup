@@ -233,7 +233,8 @@ else
 fi
 
 # sending mail
-SUMMARY="[ldap-backup] $BACKUP_NAME $RETENTION_POLICY ($SIZE) $OUTCOME"
+HOST=$(hostname)
+SUMMARY="[ldap-backup] $BACKUP_NAME@$HOST $RETENTION_POLICY ($SIZE) $OUTCOME"
 if [[ "$SEND_MAIL" == true ]]; then
   # sending mail
   cat $LOG_FILE | mail -s "$SUMMARY" -a "From: $EMAILFROM" $EMAILTO
