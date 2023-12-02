@@ -200,7 +200,7 @@ for CONFIG_FILE in ${CONFIG_FILES[@]}; do
 
         # Print backup end message
         if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
-            write "\033[32mdone\033[0m"
+            write "\033[32mdone\033[0m ($(stat --printf="%s" "$BACKUP_FILE" | numfmt --to=iec))"
         else
             # Add failed backup's information to the array
             FAILED_BACKUPS+=("$BACKUP_NAME.$LDAP_SUFFIX")
