@@ -1,5 +1,7 @@
 #!/bin/bash
 
+SLAPCAT="${SLAPCAT:=/usr/sbin/slapcat}"
+
 # Initialize variables with default values
 CONFIG_DIRECTORY=/etc/ldap-backup
 HELP_FLAG=0
@@ -196,7 +198,7 @@ for CONFIG_FILE in ${CONFIG_FILES[@]}; do
         # Print backup start message
         log "Ldap prefix: $LDAP_SUFFIX ... \c"
 
-        slapcat -b "$LDAP_SUFFIX" | gzip -9 > "$BACKUP_FILE"
+        $SLAPCAT -b "$LDAP_SUFFIX" | gzip -9 > "$BACKUP_FILE"
 
         # Print backup end message
         if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
